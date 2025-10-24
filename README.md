@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # WhatsApp AI Customer Care Chatbot (Amazon Bedrock)
 
 Chatbot webhook for WhatsApp Cloud API that uses Amazon Bedrock for AI responses, DynamoDB for session state, and AWS SAM for deployment.
@@ -151,4 +152,5 @@ Respons low-confidence atau intent `out_of_scope` memakai template aman dan mena
 - Order status masih dummy (`nlu.check_order_status`).
 - Guardlist sederhana; pertimbangkan Guardrail resmi untuk proteksi tambahan.
 - Pastikan secret WhatsApp direfresh sesuai masa berlaku token.
+
 
