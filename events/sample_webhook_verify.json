@@ -1,0 +1,12 @@
+{
+  "queryStringParameters": {
+    "hub.mode": "subscribe",
+    "hub.verify_token": "test-token",
+    "hub.challenge": "123456"
+  },
+  "requestContext": {
+    "http": {
+      "method": "GET"
+    }
+  }
+}

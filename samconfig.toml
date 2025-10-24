@@ -1,0 +1,17 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "chatbot-bedrock"
+region = "us-east-1"
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+parameter_overrides = [
+  "AppEnv=dev",
+  "WhatsAppGraphVersion=v20.0",
+  "WhatsAppPhoneNumberId=<your-phone-number-id>",
+  "BedrockModelId=<your-bedrock-model-id>"
+]
+

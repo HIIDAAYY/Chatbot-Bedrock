@@ -1,0 +1,8 @@
+{
+  "body": "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"12345\",\"changes\":[{\"field\":\"messages\",\"value\":{\"messaging_product\":\"whatsapp\",\"contacts\":[{\"wa_id\":\"6281234567890\"}],\"messages\":[{\"from\":\"6281234567890\",\"id\":\"wamid.HBgL\",\"timestamp\":\"1700000000\",\"type\":\"text\",\"text\":{\"body\":\"Halo, apakah ada promo?\"}}]}}]}]}",
+  "requestContext": {
+    "http": {
+      "method": "POST"
+    }
+  }
+}

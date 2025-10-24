@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: WhatsApp AI Customer Care Chatbot powered by Amazon Bedrock
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 512
+    Tracing: Active
+
+Parameters:
+  AppEnv:
+    Type: String
+    Default: dev
+    Description: Application environment name (dev/stage/prod)
+  WhatsAppGraphBase:
+    Type: String
+    Default: https://graph.facebook.com
+    Description: Base URL for WhatsApp Graph API
+  WhatsAppGraphVersion:
+    Type: String
+    Description: Version of the WhatsApp Graph API (e.g. v20.0)
+  WhatsAppPhoneNumberId:
+    Type: String
+    Description: WhatsApp Business phone number ID
+  WhatsAppSecretName:
+    Type: String
+    Default: wa-bot-secrets
+    Description: Secrets Manager secret name containing WhatsApp credentials
+  BedrockModelId:
+    Type: String
+    Description: Amazon Bedrock model identifier
+  KnowledgeBaseId:
+    Type: String
+    Default: ''
+    Description: Optional Knowledge Base ID for Retrieve-And-Generate
+  BedrockGuardrailId:
+    Type: String
+    Default: ''
+    Description: Optional Bedrock Guardrail identifier
+  BedrockGuardrailVersion:
+    Type: String
+    Default: ''
+    Description: Optional Bedrock Guardrail version
+  LogLevel:
+    Type: String
+    Default: INFO
+    AllowedValues:
+      - DEBUG
+      - INFO
+      - WARNING
+      - ERROR
+      - CRITICAL
+    Description: Logging level for the function
+
+Resources:
+  ChatbotTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TableName: !Sub '${AWS::StackName}-sessions'
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: false
+
+  ChatbotFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-handler'
+      CodeUri: src/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          APP_ENV: !Ref AppEnv
+          AWS_REGION: !Ref AWS::Region
+          WHATSAPP_GRAPH_BASE: !Ref WhatsAppGraphBase
+          WHATSAPP_GRAPH_VERSION: !Ref WhatsAppGraphVersion
+          WHATSAPP_PHONE_NUMBER_ID: !Ref WhatsAppPhoneNumberId
+          WHATSAPP_SECRET_NAME: !Ref WhatsAppSecretName
+          DDB_TABLE: !Ref ChatbotTable
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          KNOWLEDGE_BASE_ID: !Ref KnowledgeBaseId
+          BEDROCK_GUARDRAIL_ID: !Ref BedrockGuardrailId
+          BEDROCK_GUARDRAIL_VER: !Ref BedrockGuardrailVersion
+          LOG_LEVEL: !Ref LogLevel
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ChatbotTable
+        - Statement:
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+              - bedrock:Retrieve
+              - bedrock:RetrieveAndGenerate
+            Resource: '*'
+        - Statement:
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${WhatsAppSecretName}*'
+      Events:
+        WebhookGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ChatbotApi
+            Path: /webhook
+            Method: GET
+        WebhookPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ChatbotApi
+            Path: /webhook
+            Method: POST
+
+  ChatbotApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: v1
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL for WhatsApp webhook
+    Value: !Sub 'https://${ChatbotApi}.execute-api.${AWS::Region}.amazonaws.com/v1/webhook'
+

@@ -1,0 +1,63 @@
+{
+  "info": {
+    "name": "Bedrock WhatsApp Chatbot",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Verify Webhook",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{api_base}}/webhook?hub.mode=subscribe&hub.verify_token={{verify_token}}&hub.challenge=123456",
+          "host": [
+            "{{api_base}}"
+          ],
+          "path": [
+            "webhook"
+          ],
+          "query": [
+            {
+              "key": "hub.mode",
+              "value": "subscribe"
+            },
+            {
+              "key": "hub.verify_token",
+              "value": "{{verify_token}}"
+            },
+            {
+              "key": "hub.challenge",
+              "value": "123456"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Inbound Text Message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [\n    {\n      \"id\": \"123\",\n      \"changes\": [\n        {\n          \"field\": \"messages\",\n          \"value\": {\n            \"messaging_product\": \"whatsapp\",\n            \"contacts\": [\n              {\n                \"wa_id\": \"6281234567890\"\n              }\n            ],\n            \"messages\": [\n              {\n                \"from\": \"6281234567890\",\n                \"id\": \"wamid.test\",\n                \"timestamp\": \"1700000000\",\n                \"type\": \"text\",\n                \"text\": {\n                  \"body\": \"Halo, adakah promo terbaru?\"\n                }\n              }\n            ]\n          }\n        }\n      ]\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{api_base}}/webhook",
+          "host": [
+            "{{api_base}}"
+          ],
+          "path": [
+            "webhook"
+          ]
+        }
+      }
+    }
+  ]
+}
