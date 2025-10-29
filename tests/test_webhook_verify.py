@@ -1,27 +1,18 @@
 from typing import Dict
 
-from src.whatsapp import verify_token
-
-
-def test_verify_token_success():
-    params = {
-        "hub.mode": "subscribe",
-        "hub.verify_token": "verify-me",
-        "hub.challenge": "42",
-    }
-    assert verify_token(params) == "42"
-
-
-def test_lambda_get_verification(app_module):
+def test_lambda_get_method_not_allowed(app_module):
     event: Dict[str, object] = {
         "requestContext": {"http": {"method": "GET"}},
-        "queryStringParameters": {
-            "hub.mode": "subscribe",
-            "hub.verify_token": "verify-me",
-            "hub.challenge": "4242",
-        },
     }
+    response = app_module.lambda_handler(event, None)
+    assert response["statusCode"] == 405
 
+
+def test_lambda_ignores_empty_body(app_module):
+    event: Dict[str, object] = {
+        "requestContext": {"http": {"method": "POST"}},
+        "body": "",
+    }
     response = app_module.lambda_handler(event, None)
     assert response["statusCode"] == 200
-    assert response["body"] == "4242"
+    assert response["body"] == '{"status": "ignored"}'

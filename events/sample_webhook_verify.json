@@ -1,12 +1,13 @@
 {
-  "queryStringParameters": {
-    "hub.mode": "subscribe",
-    "hub.verify_token": "test-token",
-    "hub.challenge": "123456"
-  },
+  "description": "Twilio WhatsApp tidak memerlukan verifikasi GET. Contoh respons bila ada GET masuk:",
   "requestContext": {
     "http": {
-      "method": "GET"
+      "method": "GET",
+      "path": "/webhook"
     }
+  },
+  "expectedResponse": {
+    "statusCode": 405,
+    "body": "Method Not Allowed"
   }
 }

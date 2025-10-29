@@ -1,0 +1,27 @@
+# Python ignores
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.pytest_cache/
+
+# Environment files
+.env
+/.venv*/
+
+# Other common ignores
+*.log
+.DS_Store
+Thumbs.db
+
+# Project-specific
+events/
+postman_collection.json
+samconfig.toml
+
+# Tools/IDE
+.vscode/
+.idea/
+
+# SAM build artifacts
+.aws-sam/

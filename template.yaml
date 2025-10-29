@@ -14,20 +14,25 @@ Parameters:
     Type: String
     Default: dev
     Description: Application environment name (dev/stage/prod)
-  WhatsAppGraphBase:
+  TwilioSecretName:
     Type: String
-    Default: https://graph.facebook.com
-    Description: Base URL for WhatsApp Graph API
-  WhatsAppGraphVersion:
+    Default: twilio-bot-secrets
+    Description: Secrets Manager secret name containing Twilio credentials
+  TwilioWhatsappFrom:
     Type: String
-    Description: Version of the WhatsApp Graph API (e.g. v20.0)
-  WhatsAppPhoneNumberId:
+    Default: 'whatsapp:+14155238886'
+    Description: Twilio WhatsApp sender number (format whatsapp:+1...) ketika tidak memakai Messaging Service
+  TwilioMessagingServiceSid:
     Type: String
-    Description: WhatsApp Business phone number ID
-  WhatsAppSecretName:
+    Default: ''
+    Description: Optional Twilio Messaging Service SID (gunakan jika tidak memakai nomor langsung)
+  TwilioValidateSignature:
     Type: String
-    Default: wa-bot-secrets
-    Description: Secrets Manager secret name containing WhatsApp credentials
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Validasi signature Twilio (matikan hanya untuk lokal/pengujian)
   BedrockModelId:
     Type: String
     Description: Amazon Bedrock model identifier
@@ -45,7 +50,7 @@ Parameters:
     Description: Optional Bedrock Guardrail version
   LogLevel:
     Type: String
-    Default: INFO
+    Default: DEBUG
     AllowedValues:
       - DEBUG
       - INFO
@@ -53,6 +58,14 @@ Parameters:
       - ERROR
       - CRITICAL
     Description: Logging level for the function
+  DiscordPublicKey:
+    Type: String
+    Default: ''
+    Description: Discord Application Public Key for verifying Interactions
+  DiscordAppId:
+    Type: String
+    Default: ''
+    Description: Discord Application (Client) ID for follow-up webhook
 
 Resources:
   ChatbotTable:
@@ -83,17 +96,18 @@ Resources:
       Environment:
         Variables:
           APP_ENV: !Ref AppEnv
-          AWS_REGION: !Ref AWS::Region
-          WHATSAPP_GRAPH_BASE: !Ref WhatsAppGraphBase
-          WHATSAPP_GRAPH_VERSION: !Ref WhatsAppGraphVersion
-          WHATSAPP_PHONE_NUMBER_ID: !Ref WhatsAppPhoneNumberId
-          WHATSAPP_SECRET_NAME: !Ref WhatsAppSecretName
+          TWILIO_SECRET_NAME: !Ref TwilioSecretName
+          TWILIO_WHATSAPP_FROM: !Ref TwilioWhatsappFrom
+          TWILIO_MESSAGING_SERVICE_SID: !Ref TwilioMessagingServiceSid
+          TWILIO_VALIDATE_SIGNATURE: !Ref TwilioValidateSignature
           DDB_TABLE: !Ref ChatbotTable
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           KNOWLEDGE_BASE_ID: !Ref KnowledgeBaseId
           BEDROCK_GUARDRAIL_ID: !Ref BedrockGuardrailId
           BEDROCK_GUARDRAIL_VER: !Ref BedrockGuardrailVersion
           LOG_LEVEL: !Ref LogLevel
+          DISCORD_PUBLIC_KEY: !Ref DiscordPublicKey
+          DISCORD_APP_ID: !Ref DiscordAppId
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
@@ -110,28 +124,60 @@ Resources:
             Effect: Allow
             Action:
               - secretsmanager:GetSecretValue
-            Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${WhatsAppSecretName}*'
+            Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TwilioSecretName}*'
+        - Statement:
+            Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            # Avoid circular dependency by not referencing the function logical ID
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-handler'
       Events:
-        WebhookGet:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref ChatbotApi
-            Path: /webhook
-            Method: GET
         WebhookPost:
           Type: HttpApi
           Properties:
             ApiId: !Ref ChatbotApi
             Path: /webhook
             Method: POST
+        DiscordInteractions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ChatbotApi
+            Path: /discord
+            Method: POST
+        JsonChat:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ChatbotApi
+            Path: /chat
+            Method: POST
+        TestUi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ChatbotApi
+            Path: /ui
+            Method: GET
 
   ChatbotApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: v1
+      CorsConfiguration:
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowOrigins: ['*']
+        AllowHeaders: ['content-type','authorization']
 
 Outputs:
   ApiEndpoint:
-    Description: API Gateway endpoint URL for WhatsApp webhook
+    Description: API Gateway endpoint URL for Twilio WhatsApp webhook
     Value: !Sub 'https://${ChatbotApi}.execute-api.${AWS::Region}.amazonaws.com/v1/webhook'
+  DiscordEndpoint:
+    Description: API Gateway endpoint URL for Discord Interactions
+    Value: !Sub 'https://${ChatbotApi}.execute-api.${AWS::Region}.amazonaws.com/v1/discord'
+  TestUiUrl:
+    Description: Simple web UI for chatting without WhatsApp/Discord
+    Value: !Sub 'https://${ChatbotApi}.execute-api.${AWS::Region}.amazonaws.com/v1/ui'
+  JsonChatUrl:
+    Description: JSON chat endpoint (POST {"text":"..."})
+    Value: !Sub 'https://${ChatbotApi}.execute-api.${AWS::Region}.amazonaws.com/v1/chat'
 
+ 

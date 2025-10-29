@@ -80,7 +80,7 @@ def test_answer_with_rag_uses_scores(monkeypatch):
     monkeypatch.setenv("KNOWLEDGE_BASE_ID", "kb-123")
 
     config_module.get_settings.cache_clear()
-    config_module.get_whatsapp_secrets.cache_clear()
+    config_module.get_twilio_secrets.cache_clear()
     config_module._boto_session.cache_clear()
 
     client = BedrockClient(

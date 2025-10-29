@@ -1,79 +1,64 @@
-"""WhatsApp Cloud API helpers."""
+"""Twilio WhatsApp API helpers."""
 
 from __future__ import annotations
 
 import logging
-import time
-from typing import Any, Dict, Optional
+from functools import lru_cache
+from typing import Dict
 
-import requests
-from requests import Response
+from twilio.base.exceptions import TwilioRestException
+from twilio.rest import Client
 
-from . import config
+import config
 
 logger = logging.getLogger(__name__)
 
 
-def verify_token(query_params: Dict[str, str]) -> Optional[str]:
-    """Validate incoming webhook verification request and return the challenge."""
-    secrets = config.get_whatsapp_secrets()
-    mode = query_params.get("hub.mode")
-    verify_token_value = query_params.get("hub.verify_token")
-    challenge = query_params.get("hub.challenge")
-
-    if mode == "subscribe" and verify_token_value == secrets.verify_token:
-        return challenge
-    return None
+@lru_cache(maxsize=1)
+def _twilio_client() -> Client:
+    secrets = config.get_twilio_secrets()
+    return Client(secrets.account_sid, secrets.auth_token)
 
 
-def _build_headers(access_token: str) -> Dict[str, str]:
-    return {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
-
-
-def _http_post_with_retry(url: str, headers: Dict[str, str], payload: Dict[str, Any]) -> Response:
-    attempts = 0
-    backoff = 0.5
-    while True:
-        attempts += 1
-        response = requests.post(url, headers=headers, json=payload, timeout=5)
-        if response.status_code < 500 or attempts >= 3:
-            return response
-        time.sleep(backoff)
-        backoff *= 2
-
-
-def send_text(to: str, body: str) -> Dict[str, Any]:
-    """Send a text message to WhatsApp."""
-    secrets = config.get_whatsapp_secrets()
+def send_text(to: str, body: str) -> Dict[str, str]:
+    """Send a text message via Twilio WhatsApp."""
     settings = config.get_settings()
+    client = _twilio_client()
 
-    url = (
-        f"{settings.whatsapp_graph_base}/{settings.whatsapp_graph_version}/"
-        f"{settings.whatsapp_phone_number_id}/messages"
-    )
+    # Normalize/validate WhatsApp addressing to avoid 'Invalid From and To pair' errors
+    normalized_to = to
+    if not normalized_to.startswith("whatsapp:"):
+        if normalized_to.startswith("+"):
+            normalized_to = f"whatsapp:{normalized_to}"
+        else:
+            logger.error("twilio_invalid_to_channel", extra={"to_sample": normalized_to[:6]})
+            raise ValueError("Twilio To must be in format 'whatsapp:+<country><number>'")
 
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": body},
-    }
+    message_args = {"to": normalized_to, "body": body}
+    if settings.twilio_messaging_service_sid:
+        message_args["messaging_service_sid"] = settings.twilio_messaging_service_sid
+    else:
+        from_addr = settings.twilio_whatsapp_from or ""
+        if not from_addr.startswith("whatsapp:"):
+            logger.error("twilio_invalid_from_channel", extra={"from_sample": from_addr[:9]})
+            raise ValueError(
+                "Set TWILIO_WHATSAPP_FROM like 'whatsapp:+1...' or use TWILIO_MESSAGING_SERVICE_SID"
+            )
+        message_args["from_"] = from_addr
 
-    response = _http_post_with_retry(url, _build_headers(secrets.access_token), payload)
-
-    if response.status_code >= 400:
+    try:
+        message = client.messages.create(**message_args)
+    except TwilioRestException as exc:
         logger.error(
-            "whatsapp_send_error",
+            "twilio_send_error",
             extra={
-                "status": response.status_code,
+                "status": exc.status,
+                "code": exc.code,
+                "message": str(exc),
+                "using_messaging_service": bool(settings.twilio_messaging_service_sid),
                 "wa_hash": hash(to),
-                "error": response.text[:200],
             },
         )
-        response.raise_for_status()
+        raise
 
-    return response.json() if response.content else {"status": response.status_code}
-
+    return {"sid": message.sid}

@@ -1,42 +1,32 @@
-import json
 import os
 from typing import Dict
+from urllib.parse import urlencode
 
 from src import bedrock_client, whatsapp
 from src.guard import LOW_CONFIDENCE_RESPONSE
 from src.schemas import GeneratedAnswer
 
 
-def sample_event() -> Dict[str, object]:
-    payload = {
-        "object": "whatsapp_business_account",
-        "entry": [
-            {
-                "id": "123",
-                "changes": [
-                    {
-                        "field": "messages",
-                        "value": {
-                            "messaging_product": "whatsapp",
-                            "contacts": [{"wa_id": "628111111111"}],
-                            "messages": [
-                                {
-                                    "from": "628111111111",
-                                    "id": "wamid.test",
-                                    "timestamp": "1700000000",
-                                    "type": "text",
-                                    "text": {"body": "Halo, apakah ada promo?"},
-                                }
-                            ],
-                        },
-                    }
-                ],
-            }
-        ],
+def sample_event(message: str = "Halo, apakah ada promo?") -> Dict[str, object]:
+    form_payload = {
+        "SmsMessageSid": "SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "NumMedia": "0",
+        "SmsSid": "SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "SmsStatus": "received",
+        "Body": message,
+        "To": "whatsapp:+14155238886",
+        "NumSegments": "1",
+        "MessageSid": "SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "AccountSid": "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "From": "whatsapp:+628111111111",
+        "ApiVersion": "2010-04-01",
+        "WaId": "628111111111",
     }
     return {
-        "requestContext": {"http": {"method": "POST"}},
-        "body": json.dumps(payload),
+        "requestContext": {"http": {"method": "POST", "path": "/webhook"}},
+        "headers": {"host": "example.com", "x-forwarded-proto": "https"},
+        "body": urlencode(form_payload),
+        "isBase64Encoded": False,
     }
 
 
@@ -62,7 +52,7 @@ def test_inbound_text_triggers_bedrock(monkeypatch, app_module, dynamodb_table):
 
     assert response["statusCode"] == 200
     assert bedrock_call["question"] == "Halo, apakah ada promo?"
-    assert send_payload["to"] == "628111111111"
+    assert send_payload["to"] == "whatsapp:+628111111111"
     assert "Promo saat ini" in send_payload["body"]
 
     table = dynamodb_table.Table(os.environ["DDB_TABLE"])
@@ -85,12 +75,7 @@ def test_out_of_scope_escalates(monkeypatch, app_module, dynamodb_table):
     monkeypatch.setattr(bedrock_client.BedrockClient, "answer_plain", mock_answer_plain)
     monkeypatch.setattr(whatsapp, "send_text", mock_send_text)
 
-    event = sample_event()
-    body = json.loads(event["body"])
-    body["entry"][0]["changes"][0]["value"]["messages"][0]["text"]["body"] = "Bisa kirim password akun saya?"
-    event["body"] = json.dumps(body)
-
-    response = app_module.lambda_handler(event, None)
+    response = app_module.lambda_handler(sample_event("Bisa kirim password akun saya?"), None)
 
     assert response["statusCode"] == 200
     assert send_payload["body"] == LOW_CONFIDENCE_RESPONSE

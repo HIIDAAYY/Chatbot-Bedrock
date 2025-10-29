@@ -1,8 +1,14 @@
 {
-  "body": "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"12345\",\"changes\":[{\"field\":\"messages\",\"value\":{\"messaging_product\":\"whatsapp\",\"contacts\":[{\"wa_id\":\"6281234567890\"}],\"messages\":[{\"from\":\"6281234567890\",\"id\":\"wamid.HBgL\",\"timestamp\":\"1700000000\",\"type\":\"text\",\"text\":{\"body\":\"Halo, apakah ada promo?\"}}]}}]}]}",
   "requestContext": {
     "http": {
-      "method": "POST"
+      "method": "POST",
+      "path": "/webhook"
     }
-  }
+  },
+  "headers": {
+    "host": "example.com",
+    "x-forwarded-proto": "https"
+  },
+  "body": "SmsMessageSid=SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX&NumMedia=0&SmsSid=SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX&SmsStatus=received&Body=Halo%2C%20apakah%20ada%20promo%3F&To=whatsapp%3A%2B14155238886&NumSegments=1&MessageSid=SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX&AccountSid=ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX&From=whatsapp%3A%2B6281234567890&ApiVersion=2010-04-01&WaId=6281234567890",
+  "isBase64Encoded": false
 }

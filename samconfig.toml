@@ -2,16 +2,14 @@ version = 0.1
 
 [default.global.parameters]
 stack_name = "chatbot-bedrock"
-region = "us-east-1"
+region = "ap-southeast-3"
 
 [default.deploy.parameters]
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-parameter_overrides = [
-  "AppEnv=dev",
-  "WhatsAppGraphVersion=v20.0",
-  "WhatsAppPhoneNumberId=<your-phone-number-id>",
-  "BedrockModelId=<your-bedrock-model-id>"
-]
-
+parameter_overrides = "AppEnv=\"dev\" TwilioSecretName=\"twilio-bot-secret\" TwilioWhatsappFrom=\"whatsapp:+14155238886\" TwilioMessagingServiceSid=\"\" TwilioValidateSignature=\"false\" BedrockModelId=\"anthropic.claude-3-sonnet-20240229-v1:0\" KnowledgeBaseId=\"\" BedrockGuardrailId=\"\" BedrockGuardrailVersion=\"\" LogLevel=\"INFO\" DiscordPublicKey=\"3dfb81790e7b906697b877ad613ab47b3c1ddc69df3fabae4a56ac0f8bfa044c\" DiscordAppId=\"1432631557536874548\""
+stack_name = "whatsapp-bedrock-bot"
+s3_prefix = "whatsapp-bedrock-bot"
+disable_rollback = true
+image_repositories = []

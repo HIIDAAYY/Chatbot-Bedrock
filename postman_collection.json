@@ -5,32 +5,16 @@
   },
   "item": [
     {
-      "name": "Verify Webhook",
+      "name": "GET /webhook (Should 405)",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{api_base}}/webhook?hub.mode=subscribe&hub.verify_token={{verify_token}}&hub.challenge=123456",
+          "raw": "{{api_base}}/webhook",
           "host": [
             "{{api_base}}"
           ],
-          "path": [
-            "webhook"
-          ],
-          "query": [
-            {
-              "key": "hub.mode",
-              "value": "subscribe"
-            },
-            {
-              "key": "hub.verify_token",
-              "value": "{{verify_token}}"
-            },
-            {
-              "key": "hub.challenge",
-              "value": "123456"
-            }
-          ]
+          "path": ["webhook"]
         }
       }
     },
@@ -41,12 +25,45 @@
         "header": [
           {
             "key": "Content-Type",
-            "value": "application/json"
+            "value": "application/x-www-form-urlencoded"
           }
         ],
         "body": {
-          "mode": "raw",
-          "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [\n    {\n      \"id\": \"123\",\n      \"changes\": [\n        {\n          \"field\": \"messages\",\n          \"value\": {\n            \"messaging_product\": \"whatsapp\",\n            \"contacts\": [\n              {\n                \"wa_id\": \"6281234567890\"\n              }\n            ],\n            \"messages\": [\n              {\n                \"from\": \"6281234567890\",\n                \"id\": \"wamid.test\",\n                \"timestamp\": \"1700000000\",\n                \"type\": \"text\",\n                \"text\": {\n                  \"body\": \"Halo, adakah promo terbaru?\"\n                }\n              }\n            ]\n          }\n        }\n      ]\n    }\n  ]\n}"
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "SmsMessageSid",
+              "value": "SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+            },
+            {
+              "key": "NumMedia",
+              "value": "0"
+            },
+            {
+              "key": "Body",
+              "value": "Halo, adakah promo terbaru?"
+            },
+            {
+              "key": "To",
+              "value": "whatsapp:+14155238886"
+            },
+            {
+              "key": "From",
+              "value": "whatsapp:+6281234567890"
+            },
+            {
+              "key": "ApiVersion",
+              "value": "2010-04-01"
+            },
+            {
+              "key": "WaId",
+              "value": "6281234567890"
+            },
+            {
+              "key": "MessageSid",
+              "value": "SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+            }
+          ]
         },
         "url": {
           "raw": "{{api_base}}/webhook",

@@ -1,15 +1,23 @@
-"""AWS Lambda entry point for the WhatsApp Bedrock chatbot."""
+"""AWS Lambda entry point for the Twilio WhatsApp Bedrock chatbot."""
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
-from typing import Any, Dict, Optional
+import os
+from typing import Any, Dict, Optional, Tuple
 
-from . import guard, nlu, state, whatsapp
-from .bedrock_client import BedrockClient
-from . import config
-from .schemas import GeneratedAnswer, SessionState, VerifyWebhookQuery, WhatsAppWebhookPayload
+from urllib.parse import parse_qs
+
+import config, guard, nlu, state, whatsapp
+from discord_integration import (
+    is_discord_request,
+    handle_interaction_event,
+    process_followup_task,
+)
+from bedrock_client import BedrockClient
+from schemas import GeneratedAnswer, SessionState, TwilioWebhookPayload
 
 config.configure_logging()
 logger = logging.getLogger(__name__)
@@ -41,6 +49,17 @@ def _json_response(body: Dict[str, Any], status: int = 200) -> Dict[str, Any]:
     }
 
 
+def _json_response_cors(body: Dict[str, Any], status: int = 200) -> Dict[str, Any]:
+    return {
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+        },
+        "body": json.dumps(body),
+    }
+
+
 def _get_bedrock_client() -> BedrockClient:
     settings = config.get_settings()
     return BedrockClient(
@@ -52,6 +71,73 @@ def _get_bedrock_client() -> BedrockClient:
     )
 
 
+def _decode_body(event: Dict[str, Any]) -> str:
+    body = event.get("body") or ""
+    if event.get("isBase64Encoded"):
+        body = base64.b64decode(body).decode("utf-8")
+    return body
+
+
+def _parse_json(event: Dict[str, Any]) -> Dict[str, Any]:
+    raw = _decode_body(event)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+def _parse_twilio_payload(event: Dict[str, Any]) -> Tuple[Optional[TwilioWebhookPayload], Dict[str, str]]:
+    raw_body = _decode_body(event)
+    if not raw_body:
+        return None, {}
+
+    parsed = {key: values[0] for key, values in parse_qs(raw_body).items() if values}
+    if not parsed:
+        return None, {}
+
+    try:
+        payload = TwilioWebhookPayload.model_validate(parsed)
+    except Exception as exc:
+        logger.error("payload_parse_error", extra={"error": str(exc)})
+        return None, parsed
+
+    return payload, parsed
+
+
+def _full_request_url(event: Dict[str, Any]) -> str:
+    headers = event.get("headers") or {}
+    proto = headers.get("x-forwarded-proto") or headers.get("X-Forwarded-Proto", "https")
+    host = headers.get("host") or headers.get("Host", "")
+    path = event.get("requestContext", {}).get("http", {}).get("path", "")
+    query = event.get("rawQueryString") or ""
+    url = f"{proto}://{host}{path}"
+    if query:
+        url = f"{url}?{query}"
+    return url
+
+
+def _validate_twilio_signature(event: Dict[str, Any], params: Dict[str, str]) -> bool:
+    settings = config.get_settings()
+    if not settings.twilio_validate_signature:
+        return True
+
+    headers = event.get("headers") or {}
+    signature = headers.get("x-twilio-signature") or headers.get("X-Twilio-Signature")
+    if not signature:
+        logger.warning("missing_twilio_signature")
+        return False
+
+    validator = config.get_twilio_validator()
+    url = _full_request_url(event)
+    try:
+        return bool(validator.validate(url, params, signature))
+    except Exception as exc:
+        logger.error("twilio_signature_validation_error", extra={"error": str(exc)})
+        return False
+
+
 SESSION_STORE = state.SessionStore(ttl_hours=72)
 
 
@@ -60,56 +146,63 @@ def lambda_handler(event: Dict[str, Any], _: Any) -> Dict[str, Any]:
     method = _method_from_event(event)
     logger.debug("incoming_event", extra={"method": method})
 
-    if method == "GET":
-        return _handle_verification(event)
+    # Internal async tasks (Discord follow-up worker)
+    internal = event.get("internal") if isinstance(event, dict) else None
+    if isinstance(internal, dict) and internal.get("type") == "discord_followup":
+        process_followup_task(internal)
+        return _json_response({"status": "ok"})
 
-    if method == "POST":
-        return _handle_message(event)
+    if method != "POST":
+        # Provide a tiny test UI for convenience
+        path = event.get("requestContext", {}).get("http", {}).get("path", "")
+        if path.endswith("/ui") and method in {"GET"}:
+            html = (
+                "<!doctype html><meta charset='utf-8'><title>Chat Test</title>"
+                "<style>body{font-family:sans-serif;max-width:680px;margin:40px auto;}textarea{width:100%;height:100px}pre{background:#111;color:#0f0;padding:12px;white-space:pre-wrap}</style>"
+                "<h2>Chat Test</h2><p>Ketik pesan dan kirim ke endpoint JSON.</p>"
+                "<textarea id=q placeholder='halo'></textarea><br><button onclick=send()>Kirim</button>"
+                "<pre id=o></pre>"
+                "<script>async function send(){const r=await fetch('./chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:document.getElementById('q').value})});document.getElementById('o').textContent=await r.text();}</script>"
+            )
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "text/html", "Access-Control-Allow-Origin": "*"},
+                "body": html,
+            }
+        return _response("Method Not Allowed", status=405)
 
-    return _response("Method Not Allowed", status=405)
+    # Route based on headers/path: Discord Interactions vs JSON chat vs Twilio webhook
+    headers = event.get("headers") or {}
+    path = event.get("requestContext", {}).get("http", {}).get("path", "")
+    if path.endswith("/discord") or is_discord_request(headers):
+        raw_body = _decode_body(event)
+        return handle_interaction_event(event, raw_body)
+    if path.endswith("/chat"):
+        body = _parse_json(event)
+        text = (body.get("text") or body.get("q") or "").strip()
+        user_id = (body.get("user") or "webtester").strip() or "webtester"
+        if not text:
+            return _json_response_cors({"error": "text is required"}, status=400)
+        answer = _handle_text_common(text, user_id)
+        return _json_response_cors(answer, status=200)
 
-
-def _handle_verification(event: Dict[str, Any]) -> Dict[str, Any]:
-    query_params = event.get("queryStringParameters") or {}
-    try:
-        VerifyWebhookQuery.model_validate(query_params, from_attributes=False)
-    except Exception:
-        return _response("Invalid verification request", status=400)
-
-    challenge = whatsapp.verify_token(query_params)
-    if challenge:
-        return _response(challenge, status=200)
-
-    return _response("Forbidden", status=403)
-
-
-def _parse_payload(event: Dict[str, Any]) -> Optional[WhatsAppWebhookPayload]:
-    body = event.get("body")
-    if not body:
-        return None
-
-    payload_dict = json.loads(body)
-    return WhatsAppWebhookPayload.model_validate(payload_dict)
-
-
-def _handle_message(event: Dict[str, Any]) -> Dict[str, Any]:
-    try:
-        payload = _parse_payload(event)
-    except Exception as exc:
-        logger.error("payload_parse_error", extra={"error": str(exc)})
-        return _json_response({"status": "ignored"}, status=200)
-
+    payload, params = _parse_twilio_payload(event)
     if not payload:
         return _json_response({"status": "ignored"}, status=200)
 
-    message = payload.first_text_message()
-    sender = payload.sender_wa_id()
+    if not _validate_twilio_signature(event, params):
+        return _response("Forbidden", status=403)
 
-    if not message or not sender:
-        logger.info("no_text_message_detected")
+    return _handle_message(payload)
+
+
+def _handle_message(payload: TwilioWebhookPayload) -> Dict[str, Any]:
+    if payload.num_media > 0:
+        logger.info("non_text_message_ignored", extra={"wa_hash": hash(payload.wa_id or payload.from_number)})
         return _json_response({"status": "ignored"}, status=200)
 
-    user_text = message.text.body
+    user_text = payload.body
+    sender = payload.wa_id or payload.from_number
     classification = nlu.classify(user_text)
     session = SESSION_STORE.get_session(sender)
 
@@ -145,7 +238,14 @@ def _handle_message(event: Dict[str, Any]) -> Dict[str, Any]:
     if classification["intent"] == "out_of_scope":
         guard_result = {"final_text": guard.LOW_CONFIDENCE_RESPONSE, "escalate": True}
 
-    whatsapp.send_text(sender, guard_result["final_text"])
+    whatsapp.send_text(payload.from_number, guard_result["final_text"])
+    logger.info(
+        "twilio_message_sent",
+        extra={
+            "wa_hash": hash(payload.from_number),
+            "escalate": guard_result["escalate"],
+        },
+    )
 
     session_state = SessionState(
         wa_id=sender,
@@ -158,5 +258,49 @@ def _handle_message(event: Dict[str, Any]) -> Dict[str, Any]:
     )
     SESSION_STORE.put_session(sender, session_state)
 
-    return _json_response({"status": "ok"})
+    return _response("OK")
 
+
+def _handle_text_common(user_text: str, user_id: str) -> Dict[str, Any]:
+    """Shared logic to process plain text (for JSON chat)."""
+    classification = nlu.classify(user_text)
+    session = SESSION_STORE.get_session(user_id)
+
+    reply_text: str
+    model_confidence = float(classification["confidence"]) or 0.5
+    bedrock_answer: Optional[GeneratedAnswer] = None
+
+    if classification["intent"] == "order_status":
+        reply_text = nlu.check_order_status(None)
+        model_confidence = 0.9
+    elif classification["intent"] == "out_of_scope":
+        reply_text = guard.LOW_CONFIDENCE_RESPONSE
+    else:
+        bedrock_client = _get_bedrock_client()
+        if bedrock_client.kb_id:
+            bedrock_answer = bedrock_client.answer_with_rag(user_text, session)
+        else:
+            bedrock_answer = bedrock_client.answer_plain(user_text, session)
+        reply_text = bedrock_answer.answer
+        model_confidence = min(model_confidence, bedrock_answer.confidence)
+
+    guard_result = guard.apply(reply_text, model_confidence, denylist=DENYLIST_TERMS)
+    if classification["intent"] == "out_of_scope":
+        guard_result = {"final_text": guard.LOW_CONFIDENCE_RESPONSE, "escalate": True}
+
+    session_state = SessionState(
+        wa_id=user_id,
+        last_intent=classification["intent"],
+        last_reply=guard_result["final_text"],
+        escalation=guard_result["escalate"] or classification["intent"] == "out_of_scope",
+        attributes={
+            "bedrock_confidence": bedrock_answer.confidence if bedrock_answer else model_confidence,
+        },
+    )
+    SESSION_STORE.put_session(user_id, session_state)
+
+    return {
+        "answer": guard_result["final_text"],
+        "intent": classification["intent"],
+        "escalate": bool(session_state.escalation),
+    }

@@ -8,8 +8,8 @@ from typing import Any, Dict, Optional
 
 from botocore.exceptions import ClientError
 
-from . import config
-from .schemas import GeneratedAnswer, SessionState
+import config
+from schemas import GeneratedAnswer, SessionState
 
 logger = logging.getLogger(__name__)
 

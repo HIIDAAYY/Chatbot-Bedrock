@@ -19,10 +19,9 @@ REQUIRED_ENV = {
     "AWS_ACCESS_KEY_ID": "testing",
     "AWS_SECRET_ACCESS_KEY": "testing",
     "AWS_SESSION_TOKEN": "testing",
-    "WHATSAPP_GRAPH_BASE": "https://graph.facebook.com",
-    "WHATSAPP_GRAPH_VERSION": "v20.0",
-    "WHATSAPP_PHONE_NUMBER_ID": "123456",
-    "WHATSAPP_SECRET_NAME": "wa-bot-secrets",
+    "TWILIO_SECRET_NAME": "twilio-bot-secrets",
+    "TWILIO_WHATSAPP_FROM": "whatsapp:+14155238886",
+    "TWILIO_VALIDATE_SIGNATURE": "false",
     "DDB_TABLE": "test-sessions",
     "BEDROCK_MODEL_ID": "anthropic.claude-3-sonnet-20240229-v1:0",
 }
@@ -32,24 +31,26 @@ REQUIRED_ENV = {
 def _env_vars(monkeypatch) -> None:
     for key, value in REQUIRED_ENV.items():
         monkeypatch.setenv(key, value)
-    monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "local-token")
-    monkeypatch.setenv("VERIFY_TOKEN", "verify-me")
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "auth-token")
 
 
 @pytest.fixture
 def aws_mock(monkeypatch) -> Generator[None, None, None]:
     with mock_dynamodb():
         from src import config
-        from src.config import get_settings, get_whatsapp_secrets, _boto_session
+        from src.config import get_settings, get_twilio_secrets, get_twilio_validator, _boto_session
 
         get_settings.cache_clear()
-        get_whatsapp_secrets.cache_clear()
+        get_twilio_secrets.cache_clear()
+        get_twilio_validator.cache_clear()
         _boto_session.cache_clear()
 
         yield
 
         get_settings.cache_clear()
-        get_whatsapp_secrets.cache_clear()
+        get_twilio_secrets.cache_clear()
+        get_twilio_validator.cache_clear()
         _boto_session.cache_clear()
 
 
@@ -74,9 +75,10 @@ def dynamodb_table(aws_mock) -> boto3.resources.base.ServiceResource:
 
 @pytest.fixture
 def app_module(monkeypatch, dynamodb_table):
-    from src import config, state, app
+    from src import config, state, app, whatsapp
 
     monkeypatch.setattr(config, "get_dynamodb_resource", lambda: dynamodb_table)
+    whatsapp._twilio_client.cache_clear()
 
     reload(state)
     reload(app)

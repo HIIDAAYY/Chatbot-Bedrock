@@ -27,22 +27,34 @@ def _require_env(name: str, *, default: Optional[str] = None) -> str:
     return value
 
 
+def _bool_env(name: str, default: bool = True) -> bool:
+    """Parse boolean environment variable values."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "y"}
+
+
 @dataclass(frozen=True)
 class Settings:
     """In-memory representation of runtime settings."""
 
     app_env: str
     aws_region: str
-    whatsapp_graph_base: str
-    whatsapp_graph_version: str
-    whatsapp_phone_number_id: str
-    whatsapp_secret_name: str
+    twilio_secret_name: str
+    twilio_whatsapp_from: Optional[str]
+    twilio_messaging_service_sid: Optional[str]
+    twilio_validate_signature: bool
     dynamodb_table: str
     bedrock_model_id: Optional[str]
     knowledge_base_id: Optional[str]
     bedrock_guardrail_id: Optional[str]
     bedrock_guardrail_ver: Optional[int]
     log_level: str
+    # Discord (optional for testing via slash commands)
+    discord_public_key: Optional[str]
+    discord_app_id: Optional[str]
+    discord_validate_signature: bool
 
 
 @lru_cache(maxsize=1)
@@ -54,17 +66,25 @@ def get_settings() -> Settings:
     settings = Settings(
         app_env=os.getenv("APP_ENV", "dev"),
         aws_region=_require_env("AWS_REGION"),
-        whatsapp_graph_base=_require_env("WHATSAPP_GRAPH_BASE"),
-        whatsapp_graph_version=_require_env("WHATSAPP_GRAPH_VERSION"),
-        whatsapp_phone_number_id=_require_env("WHATSAPP_PHONE_NUMBER_ID"),
-        whatsapp_secret_name=_require_env("WHATSAPP_SECRET_NAME"),
+        twilio_secret_name=_require_env("TWILIO_SECRET_NAME"),
+        twilio_whatsapp_from=os.getenv("TWILIO_WHATSAPP_FROM"),
+        twilio_messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
+        twilio_validate_signature=_bool_env("TWILIO_VALIDATE_SIGNATURE", default=True),
         dynamodb_table=_require_env("DDB_TABLE"),
         bedrock_model_id=os.getenv("BEDROCK_MODEL_ID"),
         knowledge_base_id=os.getenv("KNOWLEDGE_BASE_ID"),
         bedrock_guardrail_id=os.getenv("BEDROCK_GUARDRAIL_ID"),
         bedrock_guardrail_ver=guardrail_version,
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        discord_public_key=os.getenv("DISCORD_PUBLIC_KEY"),
+        discord_app_id=os.getenv("DISCORD_APP_ID"),
+        discord_validate_signature=_bool_env("DISCORD_VALIDATE_SIGNATURE", default=True),
     )
+
+    if not settings.twilio_whatsapp_from and not settings.twilio_messaging_service_sid:
+        raise ConfigurationError(
+            "Set TWILIO_WHATSAPP_FROM or TWILIO_MESSAGING_SERVICE_SID for outbound messages"
+        )
 
     return settings
 
@@ -96,64 +116,64 @@ def get_secrets_manager_client():
     return _boto_session().client("secretsmanager")
 
 
-class WhatsAppSecrets(Dict[str, str]):
-    """Typed dictionary for WhatsApp secret payloads."""
+class TwilioSecrets(Dict[str, str]):
+    """Typed dictionary for Twilio secret payloads."""
 
-    access_token_key = "WHATSAPP_ACCESS_TOKEN"
-    verify_token_key = "VERIFY_TOKEN"
-
-    @property
-    def access_token(self) -> str:
-        return self[self.access_token_key]
+    account_sid_key = "TWILIO_ACCOUNT_SID"
+    auth_token_key = "TWILIO_AUTH_TOKEN"
 
     @property
-    def verify_token(self) -> str:
-        return self[self.verify_token_key]
+    def account_sid(self) -> str:
+        return self[self.account_sid_key]
+
+    @property
+    def auth_token(self) -> str:
+        return self[self.auth_token_key]
 
 
 @lru_cache(maxsize=1)
-def get_whatsapp_secrets() -> WhatsAppSecrets:
+def get_twilio_secrets() -> TwilioSecrets:
     """
-    Fetch WhatsApp secrets from AWS Secrets Manager.
+    Fetch Twilio credentials from AWS Secrets Manager.
 
     Environment variable overrides (useful for local development) take precedence when present.
     """
-    access_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
-    verify_token = os.getenv("VERIFY_TOKEN")
-    if access_token and verify_token:
-        logger.debug("Using WhatsApp secrets from environment overrides")
-        return WhatsAppSecrets(
+    account_sid = os.getenv(TwilioSecrets.account_sid_key)
+    auth_token = os.getenv(TwilioSecrets.auth_token_key)
+    if account_sid and auth_token:
+        logger.debug("Using Twilio secrets from environment overrides")
+        return TwilioSecrets(
             {
-                WhatsAppSecrets.access_token_key: access_token,
-                WhatsAppSecrets.verify_token_key: verify_token,
+                TwilioSecrets.account_sid_key: account_sid,
+                TwilioSecrets.auth_token_key: auth_token,
             }
         )
 
     settings = get_settings()
     client = get_secrets_manager_client()
     try:
-        response = client.get_secret_value(SecretId=settings.whatsapp_secret_name)
+        response = client.get_secret_value(SecretId=settings.twilio_secret_name)
     except ClientError as exc:
-        raise ConfigurationError("Failed to fetch WhatsApp secrets") from exc
+        raise ConfigurationError("Failed to fetch Twilio secrets") from exc
 
     secret_string = response.get("SecretString")
     if not secret_string:
-        raise ConfigurationError("Secrets Manager returned empty WhatsApp secret")
+        raise ConfigurationError("Secrets Manager returned empty Twilio secret")
 
     try:
         payload = json.loads(secret_string)
     except json.JSONDecodeError as exc:
-        raise ConfigurationError("Secrets Manager WhatsApp secret is not valid JSON") from exc
+        raise ConfigurationError("Secrets Manager Twilio secret is not valid JSON") from exc
 
     missing = [
         key
-        for key in (WhatsAppSecrets.access_token_key, WhatsAppSecrets.verify_token_key)
+        for key in (TwilioSecrets.account_sid_key, TwilioSecrets.auth_token_key)
         if key not in payload
     ]
     if missing:
-        raise ConfigurationError(f"WhatsApp secret missing keys: {', '.join(missing)}")
+        raise ConfigurationError(f"Twilio secret missing keys: {', '.join(missing)}")
 
-    return WhatsAppSecrets({k: payload[k] for k in payload})
+    return TwilioSecrets({k: payload[k] for k in payload})
 
 
 def configure_logging():
@@ -165,3 +185,11 @@ def configure_logging():
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
+
+@lru_cache(maxsize=1)
+def get_twilio_validator():
+    """Return a Twilio request validator initialized with the auth token."""
+    from twilio.request_validator import RequestValidator
+
+    secrets = get_twilio_secrets()
+    return RequestValidator(secrets.auth_token)
