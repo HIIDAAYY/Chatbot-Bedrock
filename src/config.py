@@ -50,11 +50,16 @@ class Settings:
     knowledge_base_id: Optional[str]
     bedrock_guardrail_id: Optional[str]
     bedrock_guardrail_ver: Optional[int]
+    bedrock_inference_profile_arn: Optional[str]
     log_level: str
     # Discord (optional for testing via slash commands)
     discord_public_key: Optional[str]
     discord_app_id: Optional[str]
     discord_validate_signature: bool
+    # Inline FAQ (optional fallback if Knowledge Base is unavailable)
+    faq_inline_path: Optional[str]
+    faq_inline_s3_uri: Optional[str]
+    faq_inline_max_chars: int
 
 
 @lru_cache(maxsize=1)
@@ -75,10 +80,14 @@ def get_settings() -> Settings:
         knowledge_base_id=os.getenv("KNOWLEDGE_BASE_ID"),
         bedrock_guardrail_id=os.getenv("BEDROCK_GUARDRAIL_ID"),
         bedrock_guardrail_ver=guardrail_version,
+        bedrock_inference_profile_arn=os.getenv("BEDROCK_INFERENCE_PROFILE_ARN"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         discord_public_key=os.getenv("DISCORD_PUBLIC_KEY"),
         discord_app_id=os.getenv("DISCORD_APP_ID"),
         discord_validate_signature=_bool_env("DISCORD_VALIDATE_SIGNATURE", default=True),
+        faq_inline_path=os.getenv("FAQ_INLINE_PATH"),
+        faq_inline_s3_uri=os.getenv("FAQ_INLINE_S3_URI"),
+        faq_inline_max_chars=int(os.getenv("FAQ_INLINE_MAX_CHARS", "18000")),
     )
 
     if not settings.twilio_whatsapp_from and not settings.twilio_messaging_service_sid:
@@ -114,6 +123,11 @@ def get_dynamodb_resource():
 def get_secrets_manager_client():
     """Return a boto3 Secrets Manager client."""
     return _boto_session().client("secretsmanager")
+
+
+def get_s3_client():
+    """Return a boto3 S3 client."""
+    return _boto_session().client("s3")
 
 
 class TwilioSecrets(Dict[str, str]):

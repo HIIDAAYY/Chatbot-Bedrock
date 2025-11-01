@@ -9,6 +9,9 @@ Globals:
     MemorySize: 512
     Tracing: Active
 
+Conditions:
+  HasFaqInlineBucket: !Not [!Equals [!Ref FaqInlineBucketName, ""]]
+
 Parameters:
   AppEnv:
     Type: String
@@ -48,6 +51,10 @@ Parameters:
     Type: String
     Default: ''
     Description: Optional Bedrock Guardrail version
+  BedrockInferenceProfileArn:
+    Type: String
+    Default: ''
+    Description: Optional inference profile ARN for models that require it (e.g., Claude Sonnet)
   LogLevel:
     Type: String
     Default: DEBUG
@@ -66,6 +73,26 @@ Parameters:
     Type: String
     Default: ''
     Description: Discord Application (Client) ID for follow-up webhook
+  FaqInlineBucketName:
+    Type: String
+    Default: ''
+    Description: Optional S3 bucket name that stores the inline FAQ file
+  FaqInlineKeyPrefix:
+    Type: String
+    Default: '*'
+    Description: Optional key prefix inside the bucket for the inline FAQ file
+  FaqInlineS3Uri:
+    Type: String
+    Default: ''
+    Description: Optional S3 URI to a Markdown FAQ to inline into prompts when KnowledgeBaseId is empty (e.g., s3://bucket/kb/urbanstyle/urbanstyle_faq.md)
+  FaqInlinePath:
+    Type: String
+    Default: ''
+    Description: Optional local path packaged with the function to inline FAQ (not recommended for Lambda; use S3 instead)
+  FaqInlineMaxChars:
+    Type: String
+    Default: '18000'
+    Description: Max characters of inline FAQ appended to prompts
 
 Resources:
   ChatbotTable:
@@ -105,9 +132,13 @@ Resources:
           KNOWLEDGE_BASE_ID: !Ref KnowledgeBaseId
           BEDROCK_GUARDRAIL_ID: !Ref BedrockGuardrailId
           BEDROCK_GUARDRAIL_VER: !Ref BedrockGuardrailVersion
+          BEDROCK_INFERENCE_PROFILE_ARN: !Ref BedrockInferenceProfileArn
           LOG_LEVEL: !Ref LogLevel
           DISCORD_PUBLIC_KEY: !Ref DiscordPublicKey
           DISCORD_APP_ID: !Ref DiscordAppId
+          FAQ_INLINE_S3_URI: !Ref FaqInlineS3Uri
+          FAQ_INLINE_PATH: !Ref FaqInlinePath
+          FAQ_INLINE_MAX_CHARS: !Ref FaqInlineMaxChars
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
@@ -131,6 +162,14 @@ Resources:
               - lambda:InvokeFunction
             # Avoid circular dependency by not referencing the function logical ID
             Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-handler'
+        - !If 
+          - HasFaqInlineBucket
+          - Statement:
+              Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub 'arn:aws:s3:::${FaqInlineBucketName}/${FaqInlineKeyPrefix}'
+          - !Ref 'AWS::NoValue'
       Events:
         WebhookPost:
           Type: HttpApi

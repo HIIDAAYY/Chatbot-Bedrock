@@ -20,6 +20,15 @@ SYSTEM_PROMPT = (
     "Jangan berhalusinasi atau membuat kebijakan baru."
 )
 
+def _parse_s3_uri(uri: str) -> tuple[str, str]:
+    if not uri.startswith("s3://"):
+        raise ValueError("S3 URI must start with s3://")
+    path = uri[5:]
+    if "/" not in path:
+        return path, ""
+    bucket, key = path.split("/", 1)
+    return bucket, key
+
 
 class BedrockClient:
     """High level Bedrock inference client with optional RAG support."""
@@ -40,10 +49,18 @@ class BedrockClient:
         self.kb_id = kb_id
         self.guardrail_id = guardrail_id
         self.guardrail_ver = guardrail_ver
+        self.inference_profile_arn = config.get_settings().bedrock_inference_profile_arn
         self._runtime = config.get_bedrock_runtime_client()
         self._agent_runtime = (
             config.get_bedrock_agent_runtime_client() if kb_id else None
         )
+        # Load inline FAQ (optional) for fallback when KB is not configured
+        self._inline_kb_text: Optional[str] = None
+        try:
+            self._inline_kb_text = self._load_inline_kb_text()
+        except Exception:
+            # Non-fatal: if inline load fails, just ignore
+            self._inline_kb_text = None
 
     def _session_summary(self, session: Optional[SessionState]) -> str:
         if not session:
@@ -65,9 +82,50 @@ class BedrockClient:
         ]
         if rag_context:
             prompt_lines.append(f"Konten relevan:\n{rag_context}")
+        elif not self.kb_id and self._inline_kb_text:
+            # If no KB configured, provide inline FAQ context when available
+            prompt_lines.append(f"Konten relevan (FAQ internal):\n{self._inline_kb_text}")
         prompt_lines.append(f"Pengguna: {question}")
         prompt_lines.append("Jawab dalam paragraf singkat, gunakan Bahasa Indonesia.")
         return "\n\n".join(prompt_lines)
+
+    def _load_inline_kb_text(self) -> Optional[str]:
+        """Load FAQ text to be inlined into prompts (optional).
+
+        Priority:
+        1) Local path from env `FAQ_INLINE_PATH`
+        2) S3 object from env `FAQ_INLINE_S3_URI` (format s3://bucket/key)
+        Result is truncated to `FAQ_INLINE_MAX_CHARS`.
+        """
+        settings = config.get_settings()
+        if self.kb_id:
+            return None
+
+        max_chars = max(2000, int(settings.faq_inline_max_chars or 18000))
+
+        # Try local filesystem
+        import os
+        path = settings.faq_inline_path
+        if path and os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = f.read()
+                return data[:max_chars]
+            except Exception:
+                pass
+
+        # Try S3
+        s3_uri = settings.faq_inline_s3_uri
+        if s3_uri and s3_uri.startswith("s3://"):
+            try:
+                bucket, key = _parse_s3_uri(s3_uri)
+                s3 = config.get_s3_client()
+                obj = s3.get_object(Bucket=bucket, Key=key)
+                body = obj["Body"].read().decode("utf-8", errors="ignore")
+                return body[:max_chars]
+            except Exception:
+                return None
+        return None
 
     def _invoke_model(self, prompt: str) -> Dict[str, Any]:
         payload: Dict[str, Any]
@@ -107,6 +165,8 @@ class BedrockClient:
                 "guardrailIdentifier": self.guardrail_id,
                 "guardrailVersion": str(self.guardrail_ver),
             }
+        if self.inference_profile_arn:
+            invoke_kwargs["inferenceProfileArn"] = self.inference_profile_arn
 
         try:
             response = self._runtime.invoke_model(**invoke_kwargs)
@@ -203,4 +263,3 @@ class BedrockClient:
 
         confidence = highest_score if highest_score > 0 else 0.75 if answer_text else 0.0
         return GeneratedAnswer(answer=answer_text, confidence=confidence, citations=citations)
-

@@ -2,13 +2,13 @@ version = 0.1
 
 [default.global.parameters]
 stack_name = "chatbot-bedrock"
-region = "ap-southeast-3"
+region = "ap-southeast-1"
 
 [default.deploy.parameters]
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-parameter_overrides = "AppEnv=\"dev\" TwilioSecretName=\"twilio-bot-secret\" TwilioWhatsappFrom=\"whatsapp:+14155238886\" TwilioMessagingServiceSid=\"\" TwilioValidateSignature=\"false\" BedrockModelId=\"anthropic.claude-3-sonnet-20240229-v1:0\" KnowledgeBaseId=\"\" BedrockGuardrailId=\"\" BedrockGuardrailVersion=\"\" LogLevel=\"INFO\" DiscordPublicKey=\"3dfb81790e7b906697b877ad613ab47b3c1ddc69df3fabae4a56ac0f8bfa044c\" DiscordAppId=\"1432631557536874548\""
+parameter_overrides = "AppEnv=\"dev\" TwilioSecretName=\"twilio-bot-secret\" TwilioWhatsappFrom=\"whatsapp:+14155238886\" TwilioMessagingServiceSid=\"\" TwilioValidateSignature=\"false\" BedrockModelId=\"anthropic.claude-3-haiku-20240307-v1:0\" KnowledgeBaseId=\"\" BedrockGuardrailId=\"\" BedrockGuardrailVersion=\"\" BedrockInferenceProfileArn=\"\" LogLevel=\"INFO\" DiscordPublicKey=\"3dfb81790e7b906697b877ad613ab47b3c1ddc69df3fabae4a56ac0f8bfa044c\" DiscordAppId=\"1432631557536874548\" FaqInlineBucketName=\"urbanstyle-kb-ap-southeast-1-2205\" FaqInlineKeyPrefix=\"kb/urbanstyle/urbanstyle_faq.md\" FaqInlineS3Uri=\"s3://urbanstyle-kb-ap-southeast-1-2205/kb/urbanstyle/urbanstyle_faq.md\" FaqInlinePath=\"kb/urbanstyle_faq.md\" FaqInlineMaxChars=\"18000\""
 stack_name = "whatsapp-bedrock-bot"
 s3_prefix = "whatsapp-bedrock-bot"
 disable_rollback = true
