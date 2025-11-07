@@ -155,6 +155,13 @@ Tes meliputi:
 - Jika `KNOWLEDGE_BASE_ID` diisi, Lambda memanggil `RetrieveAndGenerate` dan mengevaluasi skor relevansi. Skor rendah → respon aman + eskalasi.
 - Parameter guardrail (opsional) diteruskan ke Bedrock jika tersedia.
 
+## Pinecone FAQ (opsional)
+
+- Jika Knowledge Base Bedrock belum tersedia, isi variabel `PINECONE_*` untuk memakai Pinecone sebagai vector store FAQ.
+- Skrip `scripts/push_faq_to_pinecone.py` memecah Markdown di `kb/` dan mengirim teksnya saja. Index Pinecone bertipe “integrated embedding” akan mengubah teks menjadi vektor secara otomatis.
+- Variabel penting: `PINECONE_API_KEY`, `PINECONE_ENV`, `PINECONE_INDEX`, `PINECONE_TOP_K`, `PINECONE_SCORE_THRESHOLD`.
+- Runtime Lambda menambahkan hasil pencarian Pinecone ke prompt Bedrock ketika konfigurasi tersedia.
+
 ## Eskalasi ke Human
 
 Jawaban low-confidence atau intent `out_of_scope` menghasilkan template aman dan menandai `escalation=true` pada state. Tambahkan integrasi tiket sesuai kebutuhan bisnis.

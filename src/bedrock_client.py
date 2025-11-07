@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 
 import config
 from schemas import GeneratedAnswer, SessionState
+import vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -80,14 +81,57 @@ class BedrockClient:
         prompt_lines = [
             f"Sesi: {self._session_summary(session)}",
         ]
-        if rag_context:
-            prompt_lines.append(f"Konten relevan:\n{rag_context}")
-        elif not self.kb_id and self._inline_kb_text:
-            # If no KB configured, provide inline FAQ context when available
-            prompt_lines.append(f"Konten relevan (FAQ internal):\n{self._inline_kb_text}")
+
+        if self.kb_id:
+            # Placeholder wajib agar Bedrock KB menerima template RAG
+            prompt_lines.append("Konten hasil pencarian:\n$search_results$")
+            if rag_context:
+                prompt_lines.append(f"Konteks tambahan:\n{rag_context}")
+        else:
+            if rag_context:
+                prompt_lines.append(f"Konten relevan:\n{rag_context}")
+            elif self._inline_kb_text:
+                # If no KB configured, provide inline FAQ context when available
+                prompt_lines.append(f"Konten relevan (FAQ internal):\n{self._inline_kb_text}")
         prompt_lines.append(f"Pengguna: {question}")
         prompt_lines.append("Jawab dalam paragraf singkat, gunakan Bahasa Indonesia.")
         return "\n\n".join(prompt_lines)
+
+    def _pinecone_context(self, question: str) -> Optional[str]:
+        matches = vector_store.search_chunks(question)
+        if not matches:
+            return None
+
+        formatted: list[str] = []
+        for idx, match in enumerate(matches, start=1):
+            text = str(match.get("text", "")).strip()
+            if not text:
+                continue
+            score = match.get("score")
+            if isinstance(score, (int, float)):
+                formatted.append(f"{idx}. (skor {score:.2f}) {text}")
+            else:
+                formatted.append(f"{idx}. {text}")
+
+        if not formatted:
+            return None
+
+        return "\n".join(formatted)
+
+    def _compose_additional_context(self, question: str) -> Optional[str]:
+        sections: list[str] = []
+
+        pinecone_context = self._pinecone_context(question)
+        if pinecone_context:
+            sections.append(f"Hasil Pinecone:\n{pinecone_context}")
+
+        if not self.kb_id and self._inline_kb_text:
+            sections.append(f"FAQ internal:\n{self._inline_kb_text}")
+
+        if not sections:
+            return None
+
+        return "\n\n".join(sections)
 
     def _load_inline_kb_text(self) -> Optional[str]:
         """Load FAQ text to be inlined into prompts (optional).
@@ -205,7 +249,8 @@ class BedrockClient:
 
     def answer_plain(self, question: str, session_ctx: Optional[SessionState]) -> GeneratedAnswer:
         """Generate an answer using InvokeModel without Knowledge Base context."""
-        prompt = self._compose_prompt(question, session_ctx)
+        context_block = self._compose_additional_context(question)
+        prompt = self._compose_prompt(question, session_ctx, rag_context=context_block)
         response_payload = self._invoke_model(prompt)
         answer_text = self._extract_text_from_response(response_payload).strip()
         confidence = 0.65
@@ -218,7 +263,8 @@ class BedrockClient:
         if not self.kb_id or not self._agent_runtime:
             raise config.ConfigurationError("KNOWLEDGE_BASE_ID must be configured for RAG flow")
 
-        prompt = self._compose_prompt(question, session_ctx)
+        context_block = self._compose_additional_context(question)
+        prompt = self._compose_prompt(question, session_ctx, rag_context=context_block)
         retrieve_config: Dict[str, Any] = {
             "type": "KNOWLEDGE_BASE",
             "knowledgeBaseConfiguration": {

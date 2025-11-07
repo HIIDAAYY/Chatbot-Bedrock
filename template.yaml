@@ -93,6 +93,30 @@ Parameters:
     Type: String
     Default: '18000'
     Description: Max characters of inline FAQ appended to prompts
+  PineconeApiKey:
+    Type: String
+    Default: ''
+    Description: Pinecone API key (gunakan Secrets Manager reference untuk produksi)
+  PineconeEnvironment:
+    Type: String
+    Default: ''
+    Description: Pinecone environment (mis. us-east-1)
+  PineconeIndex:
+    Type: String
+    Default: ''
+    Description: Pinecone index name untuk FAQ
+  PineconeTopK:
+    Type: String
+    Default: '3'
+    Description: Jumlah hasil pencarian Pinecone yang diambil
+  PineconeScoreThreshold:
+    Type: String
+    Default: '0.6'
+    Description: Skor minimum Pinecone agar konteks dipakai
+  PineconeEmbeddingModel:
+    Type: String
+    Default: 'intfloat/multilingual-e5-large'
+    Description: Nama model embedding yang dipakai skrip ingest dan runtime
 
 Resources:
   ChatbotTable:
@@ -139,6 +163,12 @@ Resources:
           FAQ_INLINE_S3_URI: !Ref FaqInlineS3Uri
           FAQ_INLINE_PATH: !Ref FaqInlinePath
           FAQ_INLINE_MAX_CHARS: !Ref FaqInlineMaxChars
+          PINECONE_API_KEY: !Ref PineconeApiKey
+          PINECONE_ENV: !Ref PineconeEnvironment
+          PINECONE_INDEX: !Ref PineconeIndex
+          PINECONE_TOP_K: !Ref PineconeTopK
+          PINECONE_SCORE_THRESHOLD: !Ref PineconeScoreThreshold
+          PINECONE_EMBEDDING_MODEL: !Ref PineconeEmbeddingModel
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:

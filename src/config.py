@@ -60,6 +60,17 @@ class Settings:
     faq_inline_path: Optional[str]
     faq_inline_s3_uri: Optional[str]
     faq_inline_max_chars: int
+    # Pinecone vector store (optional RAG fallback)
+    pinecone_api_key: Optional[str]
+    pinecone_environment: Optional[str]
+    pinecone_index: Optional[str]
+    pinecone_top_k: int
+    pinecone_score_threshold: float
+    pinecone_embedding_model: Optional[str]
+
+    @property
+    def pinecone_enabled(self) -> bool:
+        return bool(self.pinecone_api_key and self.pinecone_index)
 
 
 @lru_cache(maxsize=1)
@@ -67,6 +78,17 @@ def get_settings() -> Settings:
     """Load and cache application settings from the environment."""
     bedrock_guardrail_ver_raw = os.getenv("BEDROCK_GUARDRAIL_VER")
     guardrail_version = int(bedrock_guardrail_ver_raw) if bedrock_guardrail_ver_raw else None
+
+    pinecone_top_k_raw = os.getenv("PINECONE_TOP_K", "3")
+    pinecone_score_threshold_raw = os.getenv("PINECONE_SCORE_THRESHOLD", "0.6")
+    try:
+        pinecone_top_k = max(1, int(pinecone_top_k_raw))
+    except (TypeError, ValueError):
+        pinecone_top_k = 3
+    try:
+        pinecone_score_threshold = float(pinecone_score_threshold_raw)
+    except (TypeError, ValueError):
+        pinecone_score_threshold = 0.0
 
     settings = Settings(
         app_env=os.getenv("APP_ENV", "dev"),
@@ -88,6 +110,12 @@ def get_settings() -> Settings:
         faq_inline_path=os.getenv("FAQ_INLINE_PATH"),
         faq_inline_s3_uri=os.getenv("FAQ_INLINE_S3_URI"),
         faq_inline_max_chars=int(os.getenv("FAQ_INLINE_MAX_CHARS", "18000")),
+        pinecone_api_key=os.getenv("PINECONE_API_KEY"),
+        pinecone_environment=os.getenv("PINECONE_ENV"),
+        pinecone_index=os.getenv("PINECONE_INDEX"),
+        pinecone_top_k=pinecone_top_k,
+        pinecone_score_threshold=pinecone_score_threshold,
+        pinecone_embedding_model=os.getenv("PINECONE_EMBEDDING_MODEL"),
     )
 
     if not settings.twilio_whatsapp_from and not settings.twilio_messaging_service_sid:

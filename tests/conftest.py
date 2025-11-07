@@ -1,6 +1,6 @@
 import os
 import sys
-from importlib import reload
+from importlib import import_module, reload
 from typing import Generator
 
 import boto3
@@ -8,9 +8,24 @@ import pytest
 from moto import mock_dynamodb
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+SRC_ROOT = os.path.join(PROJECT_ROOT, "src")
 
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+if SRC_ROOT not in sys.path:
+    sys.path.insert(0, SRC_ROOT)
+
+# Ensure absolute imports like `import config` resolve to the same module as `src.config`
+MODULE_ALIASES = {
+    "config": "src.config",
+    "bedrock_client": "src.bedrock_client",
+    "schemas": "src.schemas",
+}
+
+for alias, target in MODULE_ALIASES.items():
+    if alias not in sys.modules:
+        sys.modules[alias] = import_module(target)
 
 
 REQUIRED_ENV = {
@@ -40,11 +55,17 @@ def aws_mock(monkeypatch) -> Generator[None, None, None]:
     with mock_dynamodb():
         from src import config
         from src.config import get_settings, get_twilio_secrets, get_twilio_validator, _boto_session
+        try:
+            from src import vector_store
+        except ImportError:  # pragma: no cover - optional dependency not loaded
+            vector_store = None  # type: ignore
 
         get_settings.cache_clear()
         get_twilio_secrets.cache_clear()
         get_twilio_validator.cache_clear()
         _boto_session.cache_clear()
+        if vector_store is not None:
+            vector_store.clear_caches()
 
         yield
 
@@ -52,6 +73,8 @@ def aws_mock(monkeypatch) -> Generator[None, None, None]:
         get_twilio_secrets.cache_clear()
         get_twilio_validator.cache_clear()
         _boto_session.cache_clear()
+        if vector_store is not None:
+            vector_store.clear_caches()
 
 
 @pytest.fixture

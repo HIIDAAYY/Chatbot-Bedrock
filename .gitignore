@@ -25,3 +25,14 @@ samconfig.toml
 
 # SAM build artifacts
 .aws-sam/
+.venv/
+.venv312/
+.venvtools/
+.aws-sam/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.DS_Store
+.vscode/
+temp.txt

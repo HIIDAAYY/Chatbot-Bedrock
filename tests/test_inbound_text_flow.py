@@ -46,7 +46,10 @@ def test_inbound_text_triggers_bedrock(monkeypatch, app_module, dynamodb_table):
         return {"status": 200}
 
     monkeypatch.setattr(bedrock_client.BedrockClient, "answer_plain", mock_answer_plain)
+    monkeypatch.setattr(app_module.BedrockClient, "answer_plain", mock_answer_plain)
     monkeypatch.setattr(whatsapp, "send_text", mock_send_text)
+    monkeypatch.setattr(app_module, "whatsapp", whatsapp)
+    monkeypatch.setattr(app_module.whatsapp, "send_text", mock_send_text)
 
     response = app_module.lambda_handler(sample_event(), None)
 
@@ -73,7 +76,10 @@ def test_out_of_scope_escalates(monkeypatch, app_module, dynamodb_table):
         return {"status": 200}
 
     monkeypatch.setattr(bedrock_client.BedrockClient, "answer_plain", mock_answer_plain)
+    monkeypatch.setattr(app_module.BedrockClient, "answer_plain", mock_answer_plain)
     monkeypatch.setattr(whatsapp, "send_text", mock_send_text)
+    monkeypatch.setattr(app_module, "whatsapp", whatsapp)
+    monkeypatch.setattr(app_module.whatsapp, "send_text", mock_send_text)
 
     response = app_module.lambda_handler(sample_event("Bisa kirim password akun saya?"), None)
 
